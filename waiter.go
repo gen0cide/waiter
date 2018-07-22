@@ -1,76 +1,71 @@
 package waiter
 
 import (
+	"io"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/gosuri/uiprogress"
+	"gopkg.in/cheggaaa/pb.v2"
 )
 
 var (
-	defaultRefreshInterval = time.Duration(500) * time.Millisecond
-	defaultLength          = 100
+	defaultBrakeTime = time.Duration(100) * time.Millisecond
+	defaultLength    = 100
+	template         = ` >> {{ counters . | yellow }} {{ bar . ("[" | white) ("=" | green) (">" | green) ("--" | red) ("]" | white) }} {{ percent . | cyan }}`
 )
 
 // Waiter is a blend of a sync.WaitGroup and a terminal progress bar.
 type Waiter struct {
 	sync.RWMutex
-	progress *uiprogress.Progress
-	wg       *sync.WaitGroup
-	bar      *uiprogress.Bar
-	tunits   uint64
-	cunits   uint64
-	currprog int
+	wg      *sync.WaitGroup
+	bar     *pb.ProgressBar
+	ipcount int64
 }
 
 // New returns a new Waiter with defaults
-func New() *Waiter {
-	p := uiprogress.New()
-	b := p.AddBar(100)
-	b.AppendCompleted()
-	b.PrependElapsed()
+func New(writer io.Writer) *Waiter {
+	b := pb.New64(1)
+	b.SetTemplate(pb.ProgressBarTemplate(template))
+	b.SetWidth(50)
+	b.SetWriter(writer)
 	wg := new(sync.WaitGroup)
 	return &Waiter{
-		progress: p,
-		bar:      b,
-		wg:       wg,
+		bar: b,
+		wg:  wg,
 	}
 }
 
 // Add functions just like sync.WaitGroup's Add function
 func (w *Waiter) Add(delta int) {
-	atomic.AddUint64(&w.tunits, uint64(delta))
+	atomic.AddInt64(&w.ipcount, int64(delta))
 	w.Lock()
-	w.bar.Total += delta
+	w.bar.SetTotal(w.ipcount)
 	w.Unlock()
 	w.wg.Add(delta)
 }
 
 // Done functions just like sync.WaitGroup's Done function
 func (w *Waiter) Done() {
-	w.bar.Set(1)
+	w.bar.Increment()
 	w.wg.Done()
 }
 
-// Wait functions just like sync.WaitGroup's Wait function
+// Wait functionsdfasdf just like sync.WaitGroup's Wait function
 // with an option to automatically start and stop the progress bar
 func (w *Waiter) Wait(autorun bool) {
-	if autorun {
-		w.Start()
-	}
+	w.Start()
 	w.wg.Wait()
-	if autorun {
-		w.Stop()
-	}
+	w.bar.Increment()
+	w.Stop()
 }
 
 // Start begins to render the progress bar in the terminal
 func (w *Waiter) Start() {
-	w.progress.Start()
+	w.bar.Start()
 }
 
 // Stop ends the progress bar's rendering in the terminal
 func (w *Waiter) Stop() {
-	w.progress.Stop()
+	w.bar.Finish()
 }
