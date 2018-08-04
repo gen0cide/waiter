@@ -106,6 +106,7 @@ func (w *Waiter) Stop() {
 }
 
 func (w *Waiter) Write(p []byte) (n int, err error) {
+	w.Lock()
 	if w.started {
 		w.bar.Write()
 		w.wr.Write([]byte("\n"))
@@ -114,5 +115,6 @@ func (w *Waiter) Write(p []byte) (n int, err error) {
 	if w.started {
 		w.bar.Write()
 	}
+	w.Unlock()
 	return a, b
 }

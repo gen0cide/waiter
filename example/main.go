@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/x-cray/logrus-prefixed-formatter"
+
 	"github.com/mndrix/rand"
 	"github.com/schollz/quotation-explorer/getquote"
 
@@ -48,7 +50,7 @@ func parseTest(s string) testcase {
 }
 
 type noisemaker struct {
-	l      *logrus.Logger
+	l      *logrus.Entry
 	active bool
 }
 
@@ -63,22 +65,33 @@ func (n *noisemaker) stop() {
 func (n *noisemaker) makenoise() {
 	for range noiseticker.C {
 		if n.active {
-			logRandQuote(n.l)
+			n.logRandQuote()
 		}
 	}
 }
 
-func logRandQuote(l *logrus.Logger) {
+func (n *noisemaker) logRandQuote() {
 	roll := rand.Intn(10)
 	if roll > 7 {
-		l.Errorf("%s", getquote.GetQuote())
+		n.l.Errorf("%s", getquote.GetQuote())
 		return
 	}
-	l.Infof("%s", getquote.GetQuote())
+	n.l.Infof("%s", getquote.GetQuote())
 }
 
 func main() {
-	logger := logrus.New()
+	logger := logrus.New().WithField("prefix", "test")
+	wtr := waiter.New("test", logger.Logger.Out)
+	formatter := new(prefixed.TextFormatter)
+	formatter.ForceColors = true
+	formatter.ForceFormatting = true
+	logger.Logger.Formatter = formatter
+	logger.Logger.SetLevel(logrus.DebugLevel)
+	nm := &noisemaker{
+		l: logger,
+	}
+	logger.Logger.Out = wtr
+	go nm.makenoise()
 	tcs := []testcase{}
 
 	for i, a := range os.Args {
@@ -91,18 +104,13 @@ func main() {
 	for i, t := range tcs {
 		logger.Infof("##### BEGINNING TEST %d #####", i)
 		logger.Infof("\tPARAMS: count=%d duration=%s (seconds)", t.count, t.delay.Seconds())
-		nl := logrus.New()
-		wtr := waiter.New(fmt.Sprintf("test-%d", i), os.Stderr)
-		nl.Out = wtr
-		nm := &noisemaker{
-			l: nl,
-		}
-		go nm.makenoise()
+		wtr.Reset(fmt.Sprintf("test_%d", i))
 		go addTo(wtr, t.count, t.delay)
 		nm.start()
+		wtr.Start()
 		time.Sleep(10 * time.Second)
 		nm.stop()
-		wtr.Wait(true)
+		wtr.Wait()
 		logger.Infof("Done!")
 	}
 
